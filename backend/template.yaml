@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Such Dir Wen Backend - Erster MVP Slice für Profile Creation & Authentication (Dating App)
+
+# Globale Einstellungen für alle Funktionen in diesem Template
+Globals:
+  Function:
+    Timeout: 10
+    Runtime: python3.11
+    # Umgebungsvariablen, die an alle Lambdas übergeben werden
+    Environment:
+      Variables:
+        # Wird später im Python-Code verwendet, um auf die Tabelle zuzugreifen
+        PROFILES_TABLE_NAME: !Ref ProfilesTable
+        # Wird später verwendet, um hochgeladene Bilder zu referenzieren
+        PROFILE_IMAGES_BUCKET: !Ref ProfileImagesBucket
+
+Resources:
+  # ------------------------------------------------------------------------
+  # 1. DynamoDB Tabelle (Profiles)
+  # ------------------------------------------------------------------------
+  ProfilesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: SuchDirWenProfiles
+      # Der Primärschlüssel ist die Cognito User ID
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S # String
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  # ------------------------------------------------------------------------
+  # 2. S3 Bucket (Profile Images)
+  # ------------------------------------------------------------------------
+  ProfileImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "suchdirwen-profile-images-${AWS::AccountId}"
+
+  # ------------------------------------------------------------------------
+  # 3. Lambda Funktion: Profil erstellen (CreateProfile)
+  # ------------------------------------------------------------------------
+  CreateProfileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: SuchDirWen-CreateProfile
+      # Pfad zum Python-Code: backend/lambdas/create_profile/app.py
+      CodeUri: lambdas/create_profile/
+      Handler: app.lambda_handler
+      MemorySize: 256
+      Policies:
+        # Erlaubt Lesen/Schreiben in die ProfilesTable (Zugriff auf die Umgebungsvariable)
+        - DynamoDBWritePolicy:
+            TableName: !Ref ProfilesTable
+        # Erlaubt der Lambda-Funktion, Lese-/Schreibzugriffe auf den S3 Bucket
+        - S3ReadWritePolicy:
+            BucketName: !Ref ProfileImagesBucket
+      Events:
+        CreateProfileApi:
+          Type: Api
+          Properties:
+            Path: /profile
+            Method: POST
+            # Wichtig: CORS für Flutter-Kommunikation aktivieren
+            Cors: "'*'" 
+
+Outputs:
+  # Wichtig: Die API Gateway URL, die Sie in der Flutter App verwenden
+  ApiGatewayUrl:
+    Description: "API Gateway Endpoint URL for the CreateProfile function of Such Dir Wen"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+  
+  ProfilesTableName:
+    Description: "DynamoDB Table Name for Such Dir Wen Profiles"
+    Value: !Ref ProfilesTable
+
+  ProfileImagesBucketName:
+    Description: "S3 Bucket Name for Such Dir Wen Profile Images"
+    Value: !Ref ProfileImagesBucket
